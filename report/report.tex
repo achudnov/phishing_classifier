@@ -1,0 +1,514 @@
+\documentclass{article}
+
+\title{CS559 Project Report \\ Phishing web page identification
+  using machine learning techniques}
+
+\author{Andrey Chudnov}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+\label{sec:introduction}
+
+The Web has it all. It is the largest storage of knowledge mankind has
+known, a rapidly growing social medium and a whole new way to deliver
+services. However, with the good parts inevitably come the bad ones.
+
+The Internet and cyber-crime grew together. The rise of e-commerce
+web-sites and electronic payments also gave rise to phishing and other
+online scam schemes. Phishing web-pages attempt to disguise themselves
+as well-known web-sites, usually, related on-line payment (PayPal),
+e-commerce (Amazon, eBay), social networking (Facebook) or paid on-line
+gaming (World of Warcraft). The phishing web-pages usually attempt to
+steal the credentials of the users that mistake them for legitimate
+web-sites. These credentials can then be used by the criminals to
+transfer money from users' accounts, steal sensitive data or send spam
+or malware on behalf of the user. Thus, it is evident that the users
+would very much benefit from a service or software that will warn them
+if they browse to a [suspected] phishing page. Most of the mainstream
+browsers have the capabilities to do this, however they suffer from
+the following drawbacks: 
+\begin{itemize}
+\item in most cases the web-sites are classified manually, which
+  implies a significant delay before a new phishing web-page is
+  detected, putting users at risk during this period
+
+\item the lists are located with some third-party, that should be
+  trusted, which opens the potential for tampering with the
+  black-listing information, which, in turn, impacts the users.
+\end{itemize}
+
+My hypothesis was that the web-pages in each of the two classes have a
+lot in common, which might make it possible to distinguish them
+algorithmically, eliminating manual labor in classification. Also,
+automated approach can allow moving the decision module to the
+client side and eliminate the need to trust third parties.
+
+The project objectives were:
+\begin{enumerate}
+\item to implement a system that would classify web-sites/pages into
+  two categories: phishing or benign;
+\item to evaluate the effectiveness of the chosen approach
+\end{enumerate}
+
+\section{Related work}
+\label{sec:related-work}
+
+There has been a considerable amount of work aiming at detecting
+phishing pages using machine learning algorithms. Here I discuss a few
+most recent.
+
+Ma et al. \cite{MaSaul09} use machine learning techniques to detect
+malicious (mostly phishing) web-sites. Their features include the URL
+of the page (the lexical components of it), the information from the
+DNS and WHOIS entries for the host, as well as whether the web-site is
+in one of six black lists. They compared four statistical models:
+naive Bayesian, SVM with a linear kernel, SVM with an RBF kernel and
+$l_1$-regularized logistic regression. Their hypothesis was that
+logistic regression was better fitted to deal with feature vectors of
+high dimensionality and large percentage of potentially irrelevant
+features (see also Challenges), but test results have shown a tie
+between both types of SVM and logistic regression. A low (about
+0.95\%) error rate was reported, if using the full feature space and
+SVM or LR, however, I feel that the training and testing data-sets to
+be too small to be able to make conclusions about which error rate
+would we see in practice. Still, an important takeaway is that using
+more features give better results than using less features.
+
+In contrast to \cite{MaSaul09}, Hou et al. in \cite{HouChang10}
+classify malicious web pages using features extracted from the web
+page content: HTML and JavaScript code. They propose to use a lot of
+different features: starting from $n$-grams and ending with
+control-flow graphs of JavaScript programs -- but, unfortunately,
+don't describe them in enough detail. However, they have to be
+cautious to be robust against code obfuscation. For machine learning
+algorithms they have tried Bayesian, Decision Tree, SVM and Boosted
+Decision Tree algorithms. They used the data set supplied by
+StopBadWare.com. They were able achieve best false positive and false
+negative rates (0.21\%/85.20\% or 7.6\%/92.60\%, which is arguably
+worse than in \cite{MaSaul09} -- but here they use larger data set)
+using Boosted Decision Trees and features from all 3 classes: HTML,
+JavaScript and ``advanced'' (ActiveX).
+
+% Likarish et al. in \cite{LikarishJung09} use machine learning
+% techniques (Bayesian classifications, Adaptive Decision Tree, SVM and
+% RIPPER) to detect obfuscated JavaScript. They report low false
+% positive rate using all 4 methods, and moderately low false negatives
+% for SVM and RIPPER. While obfuscation doesn't
+% guarantee malicious intent, they  both are highly correlated. Thus,
+% the fact that the JavaScript code is obfuscated could be used as an
+% additional feature for malicious web page/content detection.
+
+In their recent paper, Whittaker et al. \cite{WhittakerRyner10}
+present an automated large-scale classification system for phishing
+pages used at Google. They use a large number of features extracted
+from the URL, page contents and domain and hosting information. They
+also make extensive use of the scores given by the PageRank rank
+algorithm used in Google web search. For classification, they use
+logistic regression, optimized for highly parallel execution. They
+have reported both high performance and high precision on an
+impressive data set (millions of pages). They also deal with the
+problem of labeling the pages: they use URLs submitted by the users
+via a Gmail spam filtering, and via a separate form -- but they assume
+the resulting data sets are noisy, yet they manage to overcome this
+problem.
+
+\section{Data sets used}
+\label{sec:data-sets}
+
+During the course of the project I constructed the data sets myself
+from the information available online. I started with obtaining URLs
+of pages from the two categories. Since manual labeling of a large
+number of pages is tedious, I avoided this task by taking URLs from
+fairly reputable sources: Open Directory Project (dmoz.org) for benign
+pages and PhishTank (phishtank.com) for phishing pages. To this end, I
+wrote two custom web robots (or ``scrapers'') that systematically
+enumerated all the pages in these catalogs and added the listed URLs
+in an SQL database.  Note that although at first I wanted to use
+Google Safe Browsing API, but couldn't do it because the interface
+does not provide URLs of the suspected phishing pages, but only hashes
+of the URLs which makes it nearly impossible to collect URLs
+themselves.
+
+After the scraping was finished, I had around 500,000 URLs of benign
+pages and around 50,000 URLs of phishing pages. Most of the phishing
+URLs had to be rejected because they were reported as either invalid
+or offline. Also, I needed to balance the data set so that I have an
+equal amount of pages in the two classes. Thus, I have selected 1,500
+URLs of each kind and started collecting features.
+
+After consulting the related work, I have decided to use three sets of
+features derived from the URL, web page content and domain
+registration and web server information. Thus, I needed to collect
+page content and domain information (and I already had all information
+for extracting URL features). I decided to combine this process with
+feature extraction, which in retrospect was not the best decision
+because it closed the possibility to quickly redo the feature
+extraction should the algorithm or the features change. However, I
+can't say that this affected the results of the project much, in part
+because the feature extraction algorithms were tested before the
+larger scale feature extraction process was initiated.
+
+\section{Feature extraction}
+\label{sec:feature-extraction}
+
+As it was mentioned above, the features I considered could be grouped
+into three categories, depending on the information they were
+extracted from: URL features, page features and domain features. I
+selected these particular features because in the previous work they
+were found to be most relevant.
+
+\subsection{URL features}
+\label{sec:url-features}
+
+The features in this groups were extracted from the URL string (except
+for the last feature for which it is necessary to perform an HTTP
+request). I consider URLs in the form ``http://hostname/path''. I
+wrote a parser to extract the host name and path components of the
+URL, and also a parser for each feature targeted to extracting
+particular information from either of the two URL components. The
+features are:
+
+\begin{description}
+\item[hostname\_ip] this is a Boolean feature that tells us whether the
+  host name in represented by an IP address;
+
+\item[num\_hostname\_components] this is an integer-valued feature that
+  tells how many components does a host name have. Host name
+  components are alphanumeric strings separated by dots;
+
+\item[url\_word\_frequency] this feature is a vector of floating-point
+  numbers. Each number represents a relative frequency of a particular
+  word in the URL. I consider words to be alphanumeric strings
+  separated by characters such as '/', '?', '.' or '\&'.
+
+\item[url\_length] an integer-valued feature equal to the length of the
+  URL string in characters.
+
+\item[hostname\_length] an integer-valued feature equal to the length
+  of the hostname in characters.
+
+\item[redirects] a Boolean feature that tells whether the request to
+  this URL is redirected to another URL.
+\end{description}
+
+\subsection{Page features}
+\label{sec:page-features}
+
+These features were extracted from the page itself or, more precisely,
+from its HTML code. I used an existing HTML parser to parse the page,
+and then used the resulting tree to extract the following features:
+\begin{description}
+\item[password] a Boolean feature that tells us whether the page has a
+  password field.
+
+\item[iframes] a Boolean feature that tells us whether the page has
+  ``iframes'' in it. Iframes are blocks on the web page that can load
+  content from another page.
+
+\item[page\_word\_frequencies] a vector of floating-point
+  numbers. Each number represents a relative frequency of a particular
+  word in the web page. I considered only words that appear in the
+  text of the web page, not in the HTML markup. I regard any
+  alphanumeric string as a word, with separators being blank spaces,
+  punctuation and other non-alphanumeric characters.
+
+\item[outbound] a floating-point number that represents the percentage
+  of images, links and iframes that point to a page outside of the
+  domain of the current web-page.
+\end{description}
+
+\subsection{Domain features}
+\label{sec:domain-features}
+
+The domain features were extracted from domain registration
+information and from the Internet routing tables. The problem with
+domain registration information is that there is no standard text
+representation for it: each registrar (the organization that registers
+and stores information about domain names) reports information in its
+own way, so a custom parser is needed for each of them. What makes the
+task more difficult is the fact that there are a lot of registrars:
+one or more in each country. To this end, I used a library for
+retrieving domain information that tries to mitigate the discrepancies
+between different registrars and provide information in a unified
+format. However, it is far from being perfect: it does not always give
+all the features I am interested in. Moreover, for a small amount of
+pages it was unable to retrieve any domain information at all. As I
+will elaborate later, a significant number of pages had missing
+features; missing domain information was the single largest source of
+them. Another complication was that the library only understood proper
+domain names, which are usually sub-strings of host names. I had to
+write a parser to extract the domain name, which turned out to be more
+complicated than it appears.
+
+The features extracted from the domain information were the following:
+
+\begin{description}
+\item[registration] an integer-valued feature that represents the
+  number of days passed from January 1st 1985 until the day of
+  registration of the domain name;
+
+\item[update] an integer-valued feature representing the date of
+  update of the domain name, similar to the previous one;
+
+\item[expiration] an integer-valued feature representing the date of
+  expiration of domain name registration, similar to the previous
+  ones;
+
+\item[tld] an integer-valued feature representing the top-level domain
+  name of the page;
+
+\item[registrar] an integer-valued feature representing the name of
+  the registrar of the domain;
+
+\item[registrant] an integer-valued feature representing the name of
+  the registrant (i.e. the person or the organization that owns the
+  domain-name) of the domain.
+\end{description}
+
+This feature was extracted from the DNS records for the domain name:
+\begin{description}
+\item[ttl] integer-valued DNS time-to-live for the domain name.
+\end{description}
+
+The following features were considered from the beginning, but were
+added only at the late stages of the project. They are extracted from
+the routing information and geo-location, provided by Team Cymru
+Research (www.team-cymru.org):
+
+\begin{description}
+\item[as] an integer-valued number of the autonomous system, where the
+  web server of the page is located;
+
+\item[cc] an integer representing the country where the server is located.
+\end{description}
+
+\section{Training and testing}
+\label{sec:learning}
+
+I used LIBSVM and LIBLINEAR for training and testing the
+classifier. Both are implementations of Support Vector Machines,
+however, while the former is a more generic implementation that can
+use many different kernel functions, the latter can use only the
+linear kernel, but is highly optimized and, reportedly, more suitable
+for document classification problems, where the number of features is
+much larger than the size of the data set. Both libraries are very
+fast, use the same input format and have an excellent tool support:
+apart from implementing the algorithms themselves, they perform
+cross-validation and report error rates. I chose to use Support Vector
+Machines because they ---along with Boosted Decision Trees and
+Logistic Regression--- produced the best results in the tests done in
+previous work. 
+
+To perform the experiments I wrote a program that exports the
+specified number of samples of each class with a specified number of
+features to two text files (training and testing) in a format required
+by the libraries. Because of the potentially large number of features
+I exported several data sets with different number of samples and,
+often, with features excluded. Then I ran the training and testing
+programs of LIBSVM and LIBLINEAR with different parameters and
+recorded the accuracy. These results are reported in the next section.
+
+\section{Experiments}
+\label{sec:experiments}
+
+
+
+
+The results of the experiments are reported in table \ref{tab:results}
+listing number of training and testing samples, sets of features
+included in the data set, the number of dimensions in the data vectors,
+the library and kernel used and the best cross-validation and testing
+accuracies achieved. 
+
+Here is the explanation of the codes for data sets used in the
+experiments:
+\begin{description}
+  \item[U] set of all the URL features, described in section
+  \ref{sec:url-features}. Approximately 1,500 dimensions.\\
+  \item[UO] set of URL features in a non-optimized format, with redundant word
+  frequencies; approximately 150,000 dimensions.\\
+  \item[US] short set of URL features, i.e. the set U excluding word
+  frequencies; 5 dimensions.\\
+  \item[UR] the UO set of features with the size of the dictionary only
+  one third of such in UO; approx. 50,000 dimensions.\\
+
+  \item[P] the set of all the page features, as described in section
+  \ref{sec:page-features}; approximately 45,000 dimensions.\\
+  \item[PO] the set of all the page features in a non-optimized format, i.e. with
+  redundant word frequencies; approx. 150,000 dimensions. \\
+  \item[PS] the short set of features, i.e. the set P excluding word
+  frequencies; 3 dimensions.\\
+  \item[PR] the PO set of features with the size of the dictionary only
+  one third of such in PO; approx. 50,000 dimensions.\\
+
+  \item[W] the set of all domain features described in section
+  \ref{sec:domain-features}; 9 dimensions.\\
+  \item[WO] -- the old set of domain features that doesn't include
+  top-level-domain, AS number and country-code features; 7 dimensions.
+\end{description}
+
+And the codes used to describe the libraries and kernels:
+\begin{description}
+  \item[LL/L] LIBLINEAR with a linear kernel (L2-regularized L2-loss,
+    primal);
+
+  \item[LS/R] LIBSVM with an RBF kernel; used ``easy.py'' for
+    parameter selection and testing.
+\end{description}
+
+\begin{table*}[ht]
+  \centering
+  \begin{tabular}[h]{||l|l|l|l|l|l|l||}
+    \hline
+    $N_{train}$ & $N_{test}$ & Features & $D_{total}$ & Kernel & CV & Testing \\
+    \hline\hline
+    200 & 0 & UO+PO+WO & $\approx 300,000$  & LL/L & 68\%   & n/a \\
+    \hline
+    1200 & 200 & US+PS+W & $17$   & LL/L & 50\% & n/a \\
+    \hline
+    1200 & 200 & US+PS+W & $17$  & LS/R & 88.9\% & 84.5\% \\
+    \hline
+    1200 & 200 & UR+PR+WO & $\approx 100,000$ & LL/L & 54.2\% & 50.9\% \\
+    \hline
+    1200 & 200 & UR+PR+WO & $\approx 100,000$ & LS/R & 93.6\% & 90.5\% \\
+    \hline
+  \end{tabular}  
+  \caption{Experiment results}
+  \label{tab:results}
+\end{table*}
+
+From the table we can see that adding more features helps a lot, but
+not drastically (cf. notably the last two rows, where there is an
+almost 10000-fold difference in the number of features). Also, the
+linear kernel does a pretty poor job in separating samples, whereas
+the RBF kernel is much better. I think that is an amusing discovery
+since LIBLINEAR is presented as a better tool for document
+classification than LIBSVM (with any kernel). It would be interesting
+to see how do other methods (Boosting, Logistic Regression) perform on
+the same data sets, however, I don't have time for this.
+
+Also, the difference between the first and the last rows might also be
+explained by the difference in the number of samples.
+
+I don't have a good explanation for the results of LIBLINEAR on the
+1200x200 data set in 100,000 dimensions. It is, however, interesting to
+see how reducing the dimensionality by a mere factor of 3 makes it
+possible to run LIBSVM with an RBF kernel in an acceptable frame of
+time ($\approx 16$ hours) even on data set which is 6 times larger.
+
+\section{Problems encountered}
+\label{sec:problems-encountered}
+
+During the work on the project I have encountered a number of
+technical problems which I am describing here. I also present the
+solutions that I was able to find.
+
+\subsection{Missing features}
+\label{sec:missing-features}
+
+As I stated earlier in subsection \ref{sec:domain-features}, there was
+a significant number of missing features resulting mainly from bugs in
+the libraries I used, but also from the fact that some of the pages
+didn't exist anymore. I didn't know how to represent missing features
+in a way that would be correctly understood by the classifier, so I
+had to reduce my data set to only the pages that had complete
+features. Unfortunately this significantly reduces the applicability
+of the classifier, because a lot of real world web-pages have missing
+features. It is also notable that none of the previous studies that
+I'm referring to mentioned the problem of missing features, although,
+I am confident they had to deal with it at some point.
+
+\subsection{Curse of dimensionality}
+\label{sec:curse-dimensionality}
+
+The ``curse of dimensionality'' is the adverse impact of large number
+of features (compared to the number of samples) on the classification
+precision. My project is a great illustration of this problem for two
+reasons. 
+
+\subsubsection{Small data set}
+\label{sec:small-dataset}
+My data set was very small for two reasons. First, the number of
+phishing pages that were valid and online, as reported by PhishTank at
+the time of data collection, was very small ---a little more than
+1,500. Second, some of the web-pages, notably the phishing ones, had
+missing features, and I had to exclude them from the data set. The
+resulting data set has a little bit over 1600 pages, with equal number
+of phishing and benign pages.
+
+\subsubsection{Large number of features}
+\label{sec:large-numb-feat}
+
+The first versions of the feature database and the program that
+exported it to LIBSVM and LIBLINEAR produced sets of vectors in a
+space with over 300,000 dimensions. This is a huge number by itself,
+which stands out even more when compared to the size of the data
+set. To address this problem, I had to reduce the dimensionality. By
+eliminating about the least frequent words from the
+database and by rewriting the exporter I was able to reduce this
+number to a little bit over 50,000.
+
+I also tried using only a subset of features. The results are reported
+in section \ref{sec:experiments}.
+
+\subsection{Low performance}
+\label{sec:low-performance}
+
+During the data collection and feature extraction phase, I was
+affected by the low performance of the program that I wrote for that
+purpose. It's peak performance (while executed in parallel on 6
+machines) was a humbling 2 pages per minute. I think such low figure
+was a combination of the network latencies, huge database overheads
+(for each page hundreds of SQL queries had to be executed) and the
+fact that the database was a synchronization bottleneck, dominated by
+the low performance of the Ruby language that I used for
+implementation. Ruby, while being a convenient language with a good
+library support for my purposes, is an interpreted language with
+terrible performance. In retrospect, choosing Ruby was one of the most
+significant mistakes. Also, the libraries that I used turned out to be
+not as great, as they appeared at first: some of them crashed and
+generated a lot of errors, slowing down the process and generating
+missing features.
+
+However, solving this problem would mean having to chose a new
+language, find appropriate libraries and rewrite the programs. This is
+a time-consuming process, and I refrained from indulging in it.
+
+\section{Conclusions}
+\label{sec:conclusions}
+
+During the course of the project I have designed and implemented data
+collection and feature extraction algorithms and used existing machine
+learning tools to classify phishing and benign web-pages. Although it
+has already been suggested by the previous work, I now have first hand
+evidence that machine learning algorithms are appropriate for the
+problem at hand and yield good results. 
+
+However, special care must be given to the features that are
+selected. From the experiment results it is clear that too many or too
+few features is harmful: either the learning is too slow, or the
+performance is poor. But I think that the core problem lies in the
+fact that it is hard to encode non-numeric (e.g. textual and discrete,
+as in this case) features as (vectors of) numbers in such a way that
+both the original semantic is preserved and the implicit assumptions
+made by the learning algorithm are satisfied. 
+
+On the other hand machine learning is very handy when we have a
+potentially large amount of information that can be extracted and are
+not sure about how to extract the semantics of this information
+(e.g. in the for of true class label) relative to the problem at
+hand. In this case, machine learning algorithm might be able to
+approximate the semantic well enough for the task to be solved.
+
+\bibliographystyle{abbrv}
+\bibliography{relwork}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
